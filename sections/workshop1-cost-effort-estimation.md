@@ -26,6 +26,10 @@
 | J | CI/CD & Automation | 20 min | Existing automation, target state |
 | K | Migration Effort & Timeline | 15 min | One-time migration cost & duration |
 | L | Compliance, Regulatory, Identity & Hidden Dependencies | 30 min | PII, data residency, AD, shared drives, cache, transaction logs, licenses |
+| M | Application Interdependency & Integration Mapping | 25 min | Cross-app dependencies, shared DB/cache/files, tight coupling |
+| N | Wave / Sequencing Strategy | 20 min | Migration order, clusters, critical path, hybrid state cost |
+| O | Business Process Criticality | 15 min | Process gates, revenue impact, calendar-critical periods |
+| P | Testing Environment Lifecycle & Data Refresh | 20 min | Env lifecycle, ephemeral vs permanent, data masking, perf testing |
 
 ---
 
@@ -532,6 +536,228 @@ After the workshop, produce this per application:
 
 ---
 
+---
+
+## M — Application Interdependency & Integration Mapping (Cross-App)
+
+> *This is NOT per-app integration (covered in Section 07). This is the CROSS-APPLICATION view — which apps are coupled together and CANNOT be migrated independently. This is the #1 reason migrations fail or stall.*
+
+### M1 — Shared Infrastructure Dependencies
+
+| # | Question | Cost Impact | Why It Matters |
+|---|----------|-------------|----------------|
+| M1.1 | **Which applications share the same database instance?** (multi-schema, shared DB server) | Very High | Shared DB = apps MUST migrate together or need temporary bridge |
+| M1.2 | Which applications share the same cache cluster? (shared Redis/Memcached) | High | Cache dependency = co-migration or dual-write during transition |
+| M1.3 | Which applications share the same file system / shared drive? | High | Shared NFS/SMB = migrate together or use DataSync bridge |
+| M1.4 | Which applications share the same middleware / ESB / integration platform? | High | ESB migration = all consumers affected simultaneously |
+| M1.5 | Which applications share the same Active Directory / identity service? | High | AD migration affects ALL dependent apps at once |
+| M1.6 | Which applications share the same message queue / event bus? | Medium | Queue consumers must be repointed together or bridged |
+| M1.7 | Which applications share the same API gateway or reverse proxy? | Medium | Gateway repointing affects all backend services |
+| M1.8 | Are there any database links (dblinks) between applications? | Very High | Hard coupling — apps must be same-region or link breaks |
+
+### M2 — Tight Coupling & Real-Time Dependencies
+
+| # | Question | Cost Impact | Why It Matters |
+|---|----------|-------------|----------------|
+| M2.1 | Which applications have synchronous (real-time) API calls between them? | Very High | Latency will increase if one is on-prem and one is on AWS during migration |
+| M2.2 | What is the maximum acceptable latency between these coupled apps? (<5ms, <50ms, <200ms) | High | Sub-10ms may REQUIRE co-migration to same AZ |
+| M2.3 | Are there distributed transactions (2-phase commit) spanning multiple apps? | Very High | Must migrate together or redesign transaction model |
+| M2.4 | Which applications call each other in a synchronous chain? (A → B → C → D) | High | Chain breaks if any link crosses cloud/on-prem boundary with high latency |
+| M2.5 | Are there any file-based integrations with tight timing dependencies? (file must arrive within X minutes) | Medium | Timing may break during hybrid state |
+| M2.6 | Is there session affinity / shared session state between applications? | High | Session sharing across cloud boundary = complex |
+
+### M3 — Integration Topology Mapping
+
+| # | Question | Cost Impact | Why It Matters |
+|---|----------|-------------|----------------|
+| M3.1 | **Draw the integration map: which apps talk to which apps?** (visual topology) | — | Foundation for wave planning |
+| M3.2 | Which application is the "hub" with the most connections? (highest fan-out) | High | Hub app = migrate last (most complex) or first (unblocks everything) |
+| M3.3 | Are there circular dependencies? (A → B → C → A) | High | Circular = must migrate entire cluster together |
+| M3.4 | Which integrations can tolerate a hybrid state? (some on AWS, some on-prem during transition) | Medium | Determines if parallel-run is feasible |
+| M3.5 | What is the "blast radius" if this app goes down? How many other apps are affected? | High | High blast radius = more testing, more risk, more effort |
+| M3.6 | Are there any external third-party integrations that cannot be changed? (partner APIs, government systems, bank gateways) | Medium | Fixed endpoints = migration must work around them |
+
+---
+
+## N — Wave / Sequencing Strategy (Cross-App Migration Order)
+
+> *Individual app assessment is necessary but not sufficient. You must determine WHICH APPS MOVE TOGETHER and in WHAT ORDER. Get this wrong and you'll have apps stranded in a broken hybrid state.*
+
+### N1 — Migration Grouping & Clusters
+
+| # | Question | Cost Impact | Why It Matters |
+|---|----------|-------------|----------------|
+| N1.1 | Based on dependency mapping (Section M), what are the natural "migration clusters"? (apps that MUST move together) | Very High | Cluster size determines wave complexity and effort |
+| N1.2 | What is the size of each cluster? (number of apps, servers, databases) | High | Large clusters = long cutover windows = more risk |
+| N1.3 | Are there any apps that can move INDEPENDENTLY with zero dependencies? (standalone) | High | Quick wins — move first to build confidence |
+| N1.4 | Are there "bridge" apps that connect two clusters? (gateway between two groups) | High | Bridge apps may need to run in hybrid mode longest |
+| N1.5 | What is the maximum cluster size you can migrate in a single cutover window? | High | Practical constraint on wave sizing |
+
+### N2 — Critical Path & Blockers
+
+| # | Question | Cost Impact | Why It Matters |
+|---|----------|-------------|----------------|
+| N2.1 | **Which apps BLOCK other apps from migrating?** (must-move-first dependencies) | Very High | These are on the critical path — any delay cascades |
+| N2.2 | Is Active Directory / Identity a blocker? (must be available on AWS before apps can move) | Very High | AD/Identity is often Wave 0 prerequisite |
+| N2.3 | Is the integration platform / ESB a blocker? (must move or bridge before dependent apps) | High | MuleSoft/SAP PI migration often gates everything |
+| N2.4 | Is shared storage a blocker? (must be available on AWS before apps can access files) | High | FSx/EFS provisioning is a prerequisite |
+| N2.5 | Are there external constraints on migration order? (vendor maintenance windows, contract dates, compliance deadlines) | High | Hard constraints override technical sequencing |
+| N2.6 | What is the longest lead-time item? (Direct Connect provisioning, license procurement, vendor approval) | High | Start these NOW regardless of wave |
+
+### N3 — Sequencing Logic
+
+| # | Question | Cost Impact | Why It Matters |
+|---|----------|-------------|----------------|
+| N3.1 | What is the proposed wave order? (Wave 1 → 2 → 3 → ...) | — | Master plan |
+| N3.2 | What is the duration of each wave? (weeks/months) | High | Total program timeline and parallel-run cost |
+| N3.3 | What is the cutover window for each wave? (weekend, off-hours, holiday period) | Medium | Determines overtime / contractor cost |
+| N3.4 | How long will the "hybrid state" last? (some apps on-prem, some on AWS) | Very High | Hybrid state = dual infrastructure cost + bridge maintenance |
+| N3.5 | What is the cost of running hybrid? (DirectConnect + bridge apps + dual monitoring) | Very High | Often overlooked — can be $10K-$50K+/month |
+| N3.6 | What is the rollback strategy per wave? (can you roll back one wave without affecting others?) | High | Isolation between waves reduces risk |
+| N3.7 | Are there any "big bang" migrations required? (all-or-nothing, no incremental option) | Very High | Big bang = highest risk + highest parallel-run cost |
+
+### Wave Sequencing Decision Framework
+
+```
+WAVE 0 (Foundation — Month 1-2):
+├── Landing Zone / Account structure
+├── Direct Connect / VPN connectivity
+├── Active Directory on AWS (Managed AD or AD Connector)
+├── Shared file services (FSx/EFS) if needed as prerequisite
+├── Monitoring / logging infrastructure
+└── CI/CD pipelines for AWS
+
+WAVE 1 (Quick Wins — Low dependency, standalone apps):
+├── Independent apps with NO shared DB/cache/files
+├── Low business criticality
+├── Small team can migrate with minimal coordination
+└── Purpose: build muscle memory, prove patterns
+
+WAVE 2-3 (Core — Medium clusters):
+├── Apps with moderate dependencies (5-15 integrations)
+├── Shared cache / shared file systems
+├── Business-important but not business-critical
+└── Purpose: migrate bulk of portfolio
+
+WAVE 4 (Critical — Large tightly-coupled clusters):
+├── ERP / Finance / Core business systems
+├── SAP + all SAP-connected apps
+├── Highest dependency count
+├── Longest cutover window needed
+└── Purpose: final business-critical migrations
+
+WAVE 5 (Cleanup):
+├── Decommission on-prem infrastructure
+├── Cancel MSP contracts
+├── Terminate Direct Connect (if no longer needed)
+└── Cost optimization (Savings Plans, right-sizing)
+```
+
+---
+
+## O — Business Process Criticality (Independent of Technical Footprint)
+
+> *A technically simple, low-cost app can be the most business-critical system in the company. App criticality ≠ infrastructure size. This section captures BUSINESS PROCESS dependency that determines true RTO/RPO and migration priority.*
+
+| # | Question | Cost Impact | Why It Matters |
+|---|----------|-------------|----------------|
+| O1 | **What business process does this application support?** (e.g., period-end close, payroll, order fulfillment, regulatory reporting) | Very High | Small app + critical process = high migration priority |
+| O2 | What is the revenue impact if this business process stops? ($/hour, $/day) | Very High | Drives investment in HA architecture |
+| O3 | What is the regulatory impact if this process fails? (fines, license revocation, audit failure) | Very High | Compliance deadline may override technical sequencing |
+| O4 | Is this app a GATE for a business process? (nothing downstream can proceed without it) | Very High | Gate apps need highest availability + priority migration |
+| O5 | What is the business process RTO? (not the app RTO — the PROCESS recovery time) | Very High | Process RTO may be tighter than individual app RTO |
+| O6 | Are there seasonal/calendar-critical periods? (year-end close, tax filing, open enrollment, Black Friday) | High | Migration CANNOT happen during these windows |
+| O7 | What manual workarounds exist if this app is unavailable? | Medium | Workaround = buys time; no workaround = zero tolerance for downtime |
+| O8 | How many people / departments are blocked if this app is down? | High | Wide impact = higher business criticality regardless of app size |
+| O9 | Is this app on the critical path for financial reporting? (SOX implications) | Very High | SOX = audit trail must be continuous during migration |
+| O10 | Does this app participate in a time-sensitive chain? (e.g., nightly batch → report by 6am → board meeting) | High | Timing chain breaks during migration = business impact |
+| O11 | What is the business owner's risk tolerance for this migration? (zero risk vs acceptable short outage) | High | Shapes architecture cost (hot standby vs restore from backup) |
+| O12 | Is there a contractual SLA with EXTERNAL customers tied to this app? | Very High | Customer-facing SLA breach = penalties, reputation |
+| O13 | Rate this app: BUSINESS CRITICALITY independent of cost/size (Critical / High / Medium / Low) | — | May differ significantly from technical criticality |
+| O14 | If this app is "Low cost" but "Critical business process" — should it be in an earlier wave? | High | Resequencing decision |
+
+### Business Criticality vs. Technical Complexity Matrix
+
+```
+                        TECHNICAL COMPLEXITY
+                    Low              High
+                ┌────────────────┬────────────────┐
+    High        │ PRIORITY 1     │ PRIORITY 2     │
+BUSINESS        │ Small but      │ Large & critical│
+CRITICALITY     │ critical —     │ — needs most   │
+                │ migrate early  │ planning & HA   │
+                │ (quick win     │ (Wave 3-4,     │
+                │ + high value)  │ highest effort) │
+                ├────────────────┼────────────────┤
+    Low         │ PRIORITY 3     │ PRIORITY 4     │
+                │ Easy to move,  │ Complex but    │
+                │ low urgency —  │ low impact —   │
+                │ batch in any   │ consider Retire │
+                │ wave           │ or defer       │
+                └────────────────┴────────────────┘
+```
+
+---
+
+## P — Testing Environment Lifecycle & Data Refresh
+
+> *Non-prod environments are often 40-60% of total AWS cost. How they're provisioned, refreshed, and decommissioned directly affects cost. Data refresh from prod involves masking, tooling, and timing that are often unbudgeted.*
+
+### P1 — Environment Strategy & Lifecycle
+
+| # | Question | Cost Impact | Why It Matters |
+|---|----------|-------------|----------------|
+| P1.1 | What non-prod environments are required? (Dev, SIT, UAT, Pre-Prod, Performance/Load Test, Training, Sandbox, DR Test) | Very High | Each environment = cost multiplier; 5 envs = 5x base cost |
+| P1.2 | Which environments are permanent (always-on) vs. transient (spun up on demand)? | Very High | Transient = 70-90% cheaper if well automated |
+| P1.3 | Can performance/load testing environments be EPHEMERAL? (created before test, destroyed after) | Very High | Ephemeral perf env saves $10K-$50K/month for large apps |
+| P1.4 | What is the sizing of each non-prod environment relative to prod? (50%, 75%, 100%, variable) | High | Perf test MUST be prod-like = 100% size; Dev can be 25% |
+| P1.5 | How many concurrent performance tests run per month? Duration of each? | High | Determines if environment is permanent or on-demand |
+| P1.6 | Is there a shared performance testing environment across multiple apps? | Medium | Shared = lower cost per app but scheduling conflicts |
+| P1.7 | What is the environment provisioning lead time today? (hours, days, weeks) | Medium | Long lead time = pressure to keep environments always-on = waste |
+| P1.8 | Is there IaC to spin up/tear down environments? (Terraform, CDK, CloudFormation) | Very High | No IaC = environments stay running permanently = cost |
+
+### P2 — Data Refresh from Production
+
+| # | Question | Cost Impact | Why It Matters |
+|---|----------|-------------|----------------|
+| P2.1 | **How often is non-prod data refreshed from production?** (daily, weekly, monthly, quarterly, never) | High | Frequent refresh = ongoing compute + storage + masking cost |
+| P2.2 | What is the production data size that gets copied to non-prod? | High | 500GB refresh daily = significant I/O + storage cost |
+| P2.3 | **Is data masking / anonymization required during refresh?** (PII, PHI, PCI data must be masked) | Very High | Masking tooling = license cost + compute time + effort |
+| P2.4 | What masking tool is used or planned? (Delphix, Informatica TDM, custom scripts, AWS DMS transformation, Oracle Data Masking) | High | Tool licensing can be $50K-$200K/year; or custom = development effort |
+| P2.5 | How long does a data refresh take today? (minutes, hours, days) | Medium | Long refresh = environment unavailable = developer idle time cost |
+| P2.6 | Is the refresh automated or manual? | Medium | Manual = people cost per refresh cycle |
+| P2.7 | Are there referential integrity issues when masking? (masked FK must match masked PK) | Medium | Complex masking = more effort, more tooling, more cost |
+| P2.8 | Can you use database snapshots for refresh instead of full copy? (RDS snapshot restore, Aurora clone) | High | Aurora clone = seconds, near-zero cost; snapshot restore = faster than dump/reload |
+| P2.9 | Is there synthetic data generation as an alternative to prod refresh? | Medium | Synthetic = no masking needed but may not represent realistic workloads |
+| P2.10 | What are the compliance requirements for non-prod data? (must PII be masked? audit trail for who accessed unmasked data?) | High | Regulated industries may mandate masking = non-negotiable cost |
+
+### P3 — Performance & Load Testing Specifics
+
+| # | Question | Cost Impact | Why It Matters |
+|---|----------|-------------|----------------|
+| P3.1 | Is there a dedicated performance testing environment? Or shared with UAT? | High | Dedicated = permanent cost; shared = scheduling conflicts |
+| P3.2 | What load testing tool is used? (JMeter, Gatling, k6, LoadRunner, NeoLoad, Locust) | Medium | LoadRunner/NeoLoad = expensive license; JMeter/k6 = free |
+| P3.3 | Does perf testing require production-scale data volume? | Very High | Full prod data in perf env = storage cost = prod-size environment |
+| P3.4 | Does perf testing require production-scale compute? (same instance types as prod) | Very High | Perf env at prod scale = doubling compute cost during test windows |
+| P3.5 | How frequently are performance tests run? (every sprint, monthly, quarterly, pre-release only) | High | Frequency × duration × environment size = ongoing cost |
+| P3.6 | What is the typical performance test duration? (hours, days, weeks of soak testing) | High | Week-long soak test at prod scale = significant cost |
+| P3.7 | Can performance testing use spot instances? (if test can tolerate interruption) | Medium | Spot = 70-90% savings for perf test compute |
+| P3.8 | Is chaos engineering / resilience testing planned? (requires prod-like environment) | Medium | Additional environment time or dedicated resilience env |
+
+### Environment Cost Optimization Strategies
+
+| Strategy | Savings | Requirement |
+|----------|---------|-------------|
+| Schedule non-prod (stop nights/weekends) | 65-70% | Automation (Lambda + EventBridge or Instance Scheduler) |
+| Ephemeral perf test environments | 80-90% | IaC (Terraform/CDK) to create/destroy |
+| Aurora clones for data refresh | 90%+ vs full copy | Aurora database (clone is instant + storage-only cost) |
+| Smaller non-prod instances | 30-60% | Right-size (Dev = t3.medium vs Prod = m6i.2xlarge) |
+| Shared environments across teams | 40-50% | Scheduling and namespace isolation |
+| Spot instances for testing | 70-90% | Fault-tolerant test workloads |
+| Synthetic data instead of prod refresh | Variable | Eliminates masking cost; may not be acceptable for UAT |
+
+---
+
 ## ⚠️ Common Cost Traps — Don't Miss These
 
 | Trap | Impact | Question to Ask |
@@ -560,6 +786,12 @@ After the workshop, produce this per application:
 | **In-memory DB (HANA, VoltDB)** | Memory-optimized instances = 2-3x cost | L5.12: In-memory database dependency? |
 | **Per-core licensing explosion** | Oracle/SAP on large instances = 5-10x | L6.10: Per-core licenses that multiply? |
 | **Private CA requirement** | $400/month per CA | L6.6: Is there a PKI/CA requirement? |
+| **Shared DB forces co-migration** | Delayed timeline, larger waves | M1.1: Which apps share same DB? |
+| **Hybrid state during migration** | $10K-$50K+/month dual infra | N3.4-N3.5: How long is hybrid state? |
+| **"Small" app gates critical process** | Underinvested HA = process failure | O4: Is app a gate for a business process? |
+| **Always-on perf test environment** | Prod-scale compute running 24/7 | P1.3: Can perf env be ephemeral? |
+| **Prod data refresh without masking tool** | Manual effort + compliance risk | P2.3-P2.4: Is masking required? What tool? |
+| **Non-prod environments never stopped** | 40-60% wasted spend | P1.2: Which envs are permanent vs transient? |
 
 ---
 
@@ -593,6 +825,18 @@ Before closing the workshop, confirm you have:
 - [ ] Parallel-run duration
 - [ ] Ongoing operational FTE estimate
 - [ ] Training requirements identified
+- [ ] Cross-app dependency map created (shared DB, cache, files, ESB)
+- [ ] Migration clusters identified (apps that must move together)
+- [ ] Critical path / blocker apps identified (Wave 0 prerequisites)
+- [ ] Hybrid state duration and cost estimated
+- [ ] Wave sequence draft with timeline
+- [ ] Business process criticality rated (independent of app size/cost)
+- [ ] Calendar-critical / blackout periods identified
+- [ ] Gate apps identified (small apps that block critical processes)
+- [ ] Non-prod environment lifecycle strategy (permanent vs ephemeral)
+- [ ] Data refresh cadence and masking requirements documented
+- [ ] Performance test environment sizing and frequency captured
+- [ ] Data masking tool identified (or build vs buy decision)
 
 ---
 
