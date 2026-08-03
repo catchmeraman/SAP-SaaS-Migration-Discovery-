@@ -30,6 +30,7 @@
 | N | Wave / Sequencing Strategy | 20 min | Migration order, clusters, critical path, hybrid state cost |
 | O | Business Process Criticality | 15 min | Process gates, revenue impact, calendar-critical periods |
 | P | Testing Environment Lifecycle & Data Refresh | 20 min | Env lifecycle, ephemeral vs permanent, data masking, perf testing |
+| Q | Overall Dependencies & Assumptions | 25 min | Landing Zone, network, AD/IAM, CI/CD, monitoring — what must exist BEFORE migration |
 
 ---
 
@@ -758,6 +759,134 @@ CRITICALITY     │ critical —     │ — needs most   │
 
 ---
 
+---
+
+## Q — Overall Dependencies & Assumptions
+
+> *These are the FOUNDATIONAL prerequisites that must be true BEFORE any application can migrate. If any of these are missing, the cost estimate needs to include them and the timeline shifts. Document what you're ASSUMING is in place vs. what needs to be built.*
+
+### Q1 — AWS Foundation / Landing Zone
+
+| # | Question | Cost Impact | Why It Matters |
+|---|----------|-------------|----------------|
+| Q1.1 | **Is an AWS Landing Zone / Control Tower already deployed?** | Very High | If NO → add 4-8 weeks + $50-$150K setup effort before any app migrates |
+| Q1.2 | What is the AWS account structure? (single account, multi-account, OU structure) | High | Multi-account = AWS Organizations + SCPs + cross-account roles = setup effort |
+| Q1.3 | Is AWS Control Tower configured with guardrails? | Medium | Guardrails = compliance automation; without it = manual compliance effort |
+| Q1.4 | Are AWS accounts provisioned for each environment? (Prod, Non-Prod, Shared Services, Security, Log Archive) | High | Account vending = prerequisite for workload deployment |
+| Q1.5 | Is there a shared services account? (centralized networking, DNS, AD, monitoring) | High | Shared services architecture = design + build effort |
+| Q1.6 | Is there a centralized logging account? (CloudTrail, Config, VPC Flow Logs) | Medium | Compliance prerequisite; often mandated before go-live |
+| Q1.7 | Is there a security tooling account? (GuardDuty, Security Hub, Detective) | Medium | Security baseline must be in place before workloads land |
+| Q1.8 | Who manages the Landing Zone? (internal platform team, partner, AWS Professional Services) | High | Ongoing operational cost for foundation |
+
+### Q2 — Network Connectivity
+
+| # | Question | Cost Impact | Why It Matters |
+|---|----------|-------------|----------------|
+| Q2.1 | **Is Direct Connect already provisioned and active?** | Very High | If NO → 6-12 weeks lead time + $10-30K/month ongoing |
+| Q2.2 | If no Direct Connect, is Site-to-Site VPN sufficient? | Medium | VPN = cheaper ($0.05/hr) but lower bandwidth, higher latency |
+| Q2.3 | What bandwidth is needed between on-prem and AWS? (1Gbps, 10Gbps, 100Gbps) | Very High | Bandwidth determines DX port cost + data transfer feasibility |
+| Q2.4 | Is Transit Gateway deployed for multi-VPC connectivity? | High | TGW = $0.05/hr + $0.02/GB; needed for hub-spoke architecture |
+| Q2.5 | Are VPCs and subnets already designed and deployed? | High | If NO → VPC design + CIDR planning + subnet creation = prerequisite |
+| Q2.6 | Is there IP address space (CIDR) allocated for AWS that doesn't overlap with on-prem? | High | CIDR conflict = redesign existing network or NAT everything |
+| Q2.7 | Is DNS resolution configured between on-prem and AWS? (Route 53 Resolver endpoints) | Medium | Apps need name resolution; endpoints = $0.125/hr/direction |
+| Q2.8 | Are firewall rules / security groups pre-defined for standard patterns? | Medium | If NO → firewall rule design per app = effort |
+| Q2.9 | Is there internet egress configured? (NAT Gateway, proxy, firewall appliance) | High | NAT Gateway = $0.045/hr + $0.045/GB; must exist before apps go live |
+| Q2.10 | Is network monitoring in place? (VPC Flow Logs, Traffic Mirroring, Network Firewall) | Medium | Compliance may require this before workloads land |
+
+### Q3 — Identity & Access Management (IAM)
+
+| # | Question | Cost Impact | Why It Matters |
+|---|----------|-------------|----------------|
+| Q3.1 | **Is AWS IAM Identity Center (SSO) configured and federated with corporate IdP?** | High | If NO → users can't access AWS console/CLI; blocks all work |
+| Q3.2 | Are IAM roles and permission sets defined for standard personas? (Admin, Developer, ReadOnly, Operator) | Medium | If NO → ad-hoc IAM = security risk + setup time per app |
+| Q3.3 | Is there an IAM role strategy for workloads? (instance profiles, task roles, service roles) | Medium | Every app needs IAM roles; standardized approach saves effort |
+| Q3.4 | **Is AWS Managed Microsoft AD or AD Connector deployed?** (if apps need AD) | Very High | If apps need domain join / Kerberos and AD isn't there → blocker |
+| Q3.5 | Is cross-account role assumption configured? (for shared services access) | Medium | Needed for centralized logging, shared databases, shared services |
+| Q3.6 | Are service control policies (SCPs) defined? (preventive guardrails) | Medium | Compliance teams may block go-live without SCPs |
+| Q3.7 | Is a break-glass / emergency access process defined? | Low | Operational readiness requirement |
+| Q3.8 | Are secrets management patterns established? (Secrets Manager, Parameter Store) | Medium | Apps need credentials stored somewhere on Day 1 |
+
+### Q4 — Monitoring, Logging & Observability
+
+| # | Question | Cost Impact | Why It Matters |
+|---|----------|-------------|----------------|
+| Q4.1 | **Is centralized logging configured?** (CloudWatch Logs, S3, OpenSearch, third-party) | High | Apps need log destinations before deployment |
+| Q4.2 | Is a monitoring stack deployed? (CloudWatch dashboards, alarms, Grafana) | Medium | Ops team needs visibility from Day 1 |
+| Q4.3 | Is alerting configured? (SNS topics, PagerDuty/OpsGenie integration) | Medium | No alerts = blind operations post-migration |
+| Q4.4 | Is AWS Config enabled for compliance tracking? | Medium | May be a go-live prerequisite for regulated workloads |
+| Q4.5 | Is CloudTrail enabled in all regions? (management events, data events) | Medium | Security/compliance prerequisite |
+| Q4.6 | Is a SIEM integrated? (Splunk, Sentinel, Security Lake) | Medium | Security team needs threat detection from Day 1 |
+
+### Q5 — Backup, DR & Business Continuity Foundation
+
+| # | Question | Cost Impact | Why It Matters |
+|---|----------|-------------|----------------|
+| Q5.1 | **Is AWS Backup configured with policies/plans?** | Medium | Apps need backup from Day 1; policy must pre-exist |
+| Q5.2 | Is a DR region selected? Are foundational resources replicated there? | High | If multi-region DR needed, DR region must be pre-configured |
+| Q5.3 | Is cross-region replication configured for critical services? (S3, RDS, EBS) | High | Replication = cost; must be budgeted |
+| Q5.4 | Is there a DR runbook template? | Low | Needed before first critical app goes live |
+
+### Q6 — CI/CD & Deployment Platform
+
+| # | Question | Cost Impact | Why It Matters |
+|---|----------|-------------|----------------|
+| Q6.1 | **Is a CI/CD platform deployed and accessible?** (CodePipeline, GitHub Actions, GitLab CI, Jenkins on AWS) | High | If NO → apps can't be deployed; add 2-4 weeks setup |
+| Q6.2 | Is a container registry available? (ECR, Artifactory) | Medium | Container workloads need image registry |
+| Q6.3 | Is artifact storage configured? (S3, CodeArtifact) | Low | Build artifacts, packages need storage |
+| Q6.4 | Are deployment pipelines templatized? (reusable across apps) | Medium | Templates = faster per-app onboarding |
+| Q6.5 | Is a GitOps / IaC repository structure established? | Medium | Teams need to know where to put IaC code |
+
+### Q7 — Governance, Cost Management & FinOps
+
+| # | Question | Cost Impact | Why It Matters |
+|---|----------|-------------|----------------|
+| Q7.1 | **Are AWS Budgets and cost alerts configured?** | High | Without alerts, cost overruns go unnoticed |
+| Q7.2 | Is a tagging strategy defined and enforced? (cost allocation tags, environment, owner, app-name) | High | Without tags = cannot attribute cost per app/team |
+| Q7.3 | Are cost allocation tags activated in Billing? | Medium | Tags must be activated to appear in Cost Explorer |
+| Q7.4 | Is there a FinOps process / team? (regular cost reviews, optimization cadence) | Medium | Ongoing cost governance |
+| Q7.5 | Are Savings Plans or Reserved Instances pre-purchased? | Very High | If YES → new workloads may benefit; if NO → plan purchase timing |
+| Q7.6 | Is there an approved procurement process for AWS spend? (purchase orders, invoice setup) | Medium | Finance/procurement must be onboarded before spend ramps |
+
+---
+
+### Assumptions Register Template
+
+> *Document every assumption explicitly. Each unvalidated assumption is a risk to cost and timeline.*
+
+| # | Assumption | Status | Impact if Wrong | Owner | Validation Date |
+|---|-----------|--------|-----------------|-------|-----------------|
+| 1 | AWS Landing Zone is deployed and operational | ✅ Confirmed / ⚠️ Assumed / ❌ Not in place | +8 weeks, +$100K | Platform Team | |
+| 2 | Direct Connect 1Gbps is active with < 10ms latency to nearest AWS region | ✅ / ⚠️ / ❌ | +12 weeks lead time, +$15K/month | Network Team | |
+| 3 | AWS Managed AD is deployed in Shared Services account | ✅ / ⚠️ / ❌ | Apps requiring domain join blocked | Identity Team | |
+| 4 | IAM Identity Center federated with corporate Okta/Azure AD | ✅ / ⚠️ / ❌ | No console/CLI access for teams | Identity Team | |
+| 5 | VPCs provisioned with non-overlapping CIDRs in target region | ✅ / ⚠️ / ❌ | Network redesign needed | Network Team | |
+| 6 | CI/CD pipelines (GitHub Actions / CodePipeline) operational | ✅ / ⚠️ / ❌ | +2-4 weeks per app for manual deploy | DevOps Team | |
+| 7 | AWS Backup policies configured for all account types | ✅ / ⚠️ / ❌ | Data loss risk on Day 1 | Platform Team | |
+| 8 | Centralized logging (CloudWatch/OpenSearch) receiving logs | ✅ / ⚠️ / ❌ | Blind operations, compliance gap | Platform Team | |
+| 9 | Tagging strategy defined and tag enforcement in place | ✅ / ⚠️ / ❌ | Cannot attribute costs; FinOps failure | FinOps/Cloud Team | |
+| 10 | Security baseline (GuardDuty, Security Hub, Config) enabled | ✅ / ⚠️ / ❌ | Compliance team blocks go-live | Security Team | |
+| 11 | Sufficient AWS service quotas raised for target workloads | ✅ / ⚠️ / ❌ | Deployment failures; 1-5 day quota increase wait | Platform Team | |
+| 12 | Network firewall / NAT Gateway deployed for internet egress | ✅ / ⚠️ / ❌ | Apps cannot reach internet / external APIs | Network Team | |
+| 13 | DNS resolution (Route 53 Resolver) configured between on-prem and AWS | ✅ / ⚠️ / ❌ | Apps can't resolve on-prem hostnames | Network Team | |
+| 14 | Container platform (ECS/EKS) deployed if containerized workloads planned | ✅ / ⚠️ / ❌ | +4-6 weeks platform setup | Platform Team | |
+| 15 | Data masking tooling available for non-prod data refresh | ✅ / ⚠️ / ❌ | Compliance violation or delayed testing | Data Team | |
+| 16 | Vendor approval obtained for running COTS on AWS | ✅ / ⚠️ / ❌ | Loss of vendor support | App Owner | |
+| 17 | Budget approved for migration program (people + infra + tools) | ✅ / ⚠️ / ❌ | Program stalls mid-flight | Finance/Sponsor | |
+| 18 | Team has AWS skills or training is funded | ✅ / ⚠️ / ❌ | Slow execution, errors, rework | Delivery Manager | |
+
+---
+
+### Dependency vs. Assumption Clarification
+
+| Term | Definition | Example |
+|------|-----------|---------|
+| **Dependency** | Something that MUST be done/available before migration can proceed | "Direct Connect must be active before data migration starts" |
+| **Assumption** | Something you BELIEVE is true but haven't validated | "We assume the vendor supports AWS — needs confirmation" |
+| **Constraint** | A fixed boundary you cannot change | "Data must stay in eu-west-1 due to GDPR" |
+| **Risk** | Something that might go wrong and affect cost/timeline | "If vendor doesn't support AWS, we need a Replace strategy instead" |
+
+---
+
 ## ⚠️ Common Cost Traps — Don't Miss These
 
 | Trap | Impact | Question to Ask |
@@ -837,6 +966,17 @@ Before closing the workshop, confirm you have:
 - [ ] Data refresh cadence and masking requirements documented
 - [ ] Performance test environment sizing and frequency captured
 - [ ] Data masking tool identified (or build vs buy decision)
+- [ ] Landing Zone status confirmed (deployed / in-progress / not started)
+- [ ] Direct Connect / VPN connectivity status confirmed
+- [ ] IAM Identity Center / SSO federation confirmed
+- [ ] AWS Managed AD / AD Connector status confirmed (if needed)
+- [ ] VPC / subnet / CIDR design confirmed (no overlap with on-prem)
+- [ ] Centralized logging & monitoring confirmed operational
+- [ ] CI/CD platform deployed and accessible
+- [ ] Tagging strategy and cost allocation confirmed
+- [ ] All assumptions documented with owner and validation date
+- [ ] Dependencies list with lead times documented
+- [ ] Service quota increases identified and requested
 
 ---
 
