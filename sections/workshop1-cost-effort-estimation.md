@@ -15,13 +15,16 @@
 | # | Section | Duration | Purpose |
 |---|---------|----------|---------|
 | A | Current State & Hosting Model | 30 min | What exists today, where it runs |
-| B | AWS Target Architecture Preferences | 30 min | How they want to run on AWS |
-| C | Compute, Storage & Database Sizing | 30 min | Right-sizing inputs for AWS pricing |
-| D | Networking & Data Transfer | 15 min | Egress, connectivity, bandwidth |
-| E | Licensing & Commercial | 20 min | License impact on AWS cost |
-| F | Operations & Manpower | 20 min | Team effort, ongoing run cost |
-| G | CI/CD & Automation | 20 min | Existing automation, target state |
-| H | Migration Effort & Timeline | 15 min | One-time migration cost & duration |
+| B | Application Type Classification | 20 min | SaaS vs COTS vs Custom — determines feasibility path |
+| C | SaaS & Vendor-Hosted Applications | 30 min | Vendor migration options, AWS availability, offering review |
+| D | COTS / Standalone Products | 25 min | Vendor AWS support, marketplace, deployment models |
+| E | AWS Target Architecture Preferences | 30 min | How they want to run on AWS |
+| F | Compute, Storage & Database Sizing | 30 min | Right-sizing inputs for AWS pricing |
+| G | Networking & Data Transfer | 15 min | Egress, connectivity, bandwidth |
+| H | Licensing & Commercial | 20 min | License impact on AWS cost |
+| I | Operations & Manpower | 20 min | Team effort, ongoing run cost |
+| J | CI/CD & Automation | 20 min | Existing automation, target state |
+| K | Migration Effort & Timeline | 15 min | One-time migration cost & duration |
 
 ---
 
@@ -44,7 +47,158 @@
 
 ---
 
-## B — AWS Target Architecture Preferences
+## B — Application Type Classification
+
+> *Before estimating cost, classify each app — the cost/effort model is fundamentally different for SaaS vs COTS vs Custom.*
+
+| # | Question | Cost Impact | Why It Matters |
+|---|----------|-------------|----------------|
+| B1 | What category is this application? (Pure SaaS / COTS self-hosted / COTS vendor-hosted / Custom-built / Legacy unknown) | Very High | Determines the entire estimation approach |
+| B2 | Is this a vendor-managed SaaS (you have no infrastructure access) or self-managed on your infrastructure? | Very High | SaaS = no infra to migrate; COTS self-hosted = full migration |
+| B3 | Is the application subscription-based (SaaS) or perpetual-license (COTS)? | High | Affects ongoing cost model |
+| B4 | Does the vendor offer an AWS-hosted version or deployment option? | Very High | If yes, may be a simple subscription change |
+| B5 | Is this application available on AWS Marketplace? | High | Marketplace = simplified procurement + potential EDP credits |
+| B6 | Is this a standalone application or part of a larger suite? (e.g., SAP S/4 is part of SAP ecosystem) | High | Suite dependencies affect migration order |
+| B7 | Who manages upgrades and patches? (Vendor fully / Shared / Customer fully) | Medium | Responsibility model on AWS |
+| B8 | What is the deployment model? (Multi-tenant SaaS / Single-tenant SaaS / Dedicated instance / On-prem install) | High | Single-tenant and dedicated are more migratable |
+
+### Application Type Decision Tree
+
+```
+Is the application vendor-hosted with NO infrastructure access?
+├── YES → Pure SaaS (Section C applies)
+│   ├── Does vendor offer AWS-region hosting? → Check vendor migration options
+│   ├── Need to move data to AWS? → Data portability assessment
+│   └── Integration with AWS workloads? → API/connectivity assessment
+│
+└── NO → You manage infrastructure
+    ├── Is it a commercial product (COTS)?
+    │   ├── YES → COTS on your infra (Section D applies)
+    │   │   ├── Does vendor support AWS deployment? → Vendor certification check
+    │   │   ├── Available on AWS Marketplace? → Marketplace deployment
+    │   │   └── Vendor has no AWS story? → Risk assessment needed
+    │   │
+    │   └── NO → Custom-built / Legacy (Sections E-K apply directly)
+    └──
+```
+
+---
+
+## C — SaaS & Vendor-Hosted Applications
+
+> *For applications like SAP S/4HANA Cloud, Salesforce, ServiceNow, Workday, Dynamics 365, Jira Cloud — where the vendor manages everything. Key question: What are the vendor's AWS offerings and can we influence where it runs?*
+
+| # | Question | Cost Impact | Why It Matters |
+|---|----------|-------------|----------------|
+| **Vendor Offering Review** | | | |
+| C1 | Does the vendor offer hosting on AWS? (e.g., SAP on AWS, ServiceNow on AWS) | Very High | If yes, migration may be a commercial conversation, not technical |
+| C2 | What deployment options does the vendor offer? (Public cloud choice / Dedicated tenancy / RISE with SAP / vendor's own DC) | Very High | Determines if you can choose AWS |
+| C3 | For SAP: Is RISE with SAP an option? What is the commercial model? (subscription, managed by SAP on hyperscaler) | Very High | RISE = SAP manages infra on AWS; different cost model |
+| C4 | For SAP: Is it SAP S/4HANA Cloud Public Edition (multi-tenant) or Private Edition (single-tenant on hyperscaler)? | Very High | Public = no infra choice; Private = you can specify AWS |
+| C5 | Does the vendor allow region selection? Can you choose an AWS region? | High | Data residency + latency |
+| C6 | What is the vendor's roadmap? Are they moving to AWS or another cloud? | Medium | Future-proofing |
+| C7 | Is there a vendor-specific migration program? (e.g., SAP RISE Migration, Salesforce platform migrations) | High | Vendor may cover migration cost/effort |
+| C8 | Does the vendor have AWS-specific certifications or partnerships? (ISV partner, AWS Outposts support) | Medium | Maturity indicator |
+| **Feasibility Assessment** | | | |
+| C9 | Can you contractually request AWS hosting from this vendor? | Very High | Some vendors lock you to their cloud/DC |
+| C10 | Is there a cost difference between vendor-hosted on AWS vs other options? | High | Premium for cloud choice? |
+| C11 | What SLA does the vendor provide if hosted on AWS vs their own DC? | Medium | SLA may differ by hosting option |
+| C12 | Can data be kept in a specific AWS region (data sovereignty)? | High | Regulatory requirement |
+| C13 | What connectivity options exist between the SaaS app and your AWS environment? (PrivateLink, VPN, public API, dedicated interconnect) | High | Private connectivity has cost |
+| C14 | Does the vendor support AWS PrivateLink for private connectivity? | Medium | Secure + no egress cost |
+| **Integration & Data** | | | |
+| C15 | What APIs does the vendor expose? (REST, SOAP, OData, GraphQL, proprietary) | Medium | Integration effort |
+| C16 | Can you use AWS services to integrate? (EventBridge partner events, AppFlow connectors, Transfer Family) | Medium | Native integration = less custom code |
+| C17 | What is the data export capability? (full export, incremental, real-time CDC, API only) | High | Affects data strategy and DR |
+| C18 | Is there vendor lock-in risk? What happens if you need to leave? | High | Exit cost planning |
+| C19 | What is the vendor's backup/DR responsibility vs yours? | Medium | Shared responsibility clarity |
+| C20 | Are there API rate limits that affect integration volume? | Medium | May need premium API tier = cost |
+| **Cost Specific** | | | |
+| C21 | What is the current SaaS subscription cost? (annual, per-user, per-transaction) | High | Current baseline |
+| C22 | Would moving to vendor-on-AWS change the subscription price? | High | Sometimes more expensive |
+| C23 | Are there additional charges for AWS-hosted option? (dedicated tenancy premium, region premium) | High | Hidden SaaS cost |
+| C24 | What integration/middleware licensing is needed? (SAP CPI, MuleSoft, Informatica) | High | Integration layer cost |
+| C25 | Is there a migration/transition fee from vendor to move to AWS-hosted? | Medium | One-time cost |
+
+### SaaS Vendor AWS Availability Quick Reference
+
+| Vendor / Product | AWS Offering Available? | Migration Path |
+|-----------------|------------------------|----------------|
+| **SAP S/4HANA** | Yes — RISE with SAP on AWS, BTP on AWS | RISE = vendor-managed on AWS; Private Edition = customer choice |
+| **SAP ECC** (self-hosted) | Yes — customer-managed on EC2 | Full infrastructure migration (Section E-K) |
+| **Salesforce** | Hyperforce (AWS available in select regions) | Commercial switch; data residency choice |
+| **ServiceNow** | Runs on AWS in select instances | Request AWS-hosted instance |
+| **Workday** | Multi-tenant, no region choice for customer | Retain; integrate via API |
+| **Oracle Cloud (Fusion)** | Oracle Cloud only (OCI) | Cannot move to AWS; integrate only |
+| **Microsoft Dynamics 365** | Azure-only (Microsoft cloud) | Cannot move to AWS; integrate only |
+| **Jira / Confluence Cloud** | Atlassian-managed (on AWS already) | Already on AWS; no action needed |
+| **Slack** | Already runs on AWS | Already on AWS; no action needed |
+
+---
+
+## D — COTS / Standalone Products (Self-Hosted)
+
+> *For commercial off-the-shelf software that YOU deploy on YOUR infrastructure — e.g., SAP ECC on your servers, Oracle E-Business Suite, IBM MQ, TIBCO, SAS, custom ERP packages. Key question: Does the vendor certify/support running on AWS?*
+
+| # | Question | Cost Impact | Why It Matters |
+|---|----------|-------------|----------------|
+| **Vendor AWS Support** | | | |
+| D1 | Does the vendor officially support / certify running on AWS? | Very High | Unsupported = risk of losing vendor support |
+| D2 | Is the product listed on AWS Marketplace? What edition/version? | High | Marketplace = easier procurement, pre-configured AMI |
+| D3 | Are there vendor-published AWS reference architectures? | Medium | Saves design effort; proven patterns |
+| D4 | What AWS instance types are certified by the vendor? (e.g., SAP-certified EC2 instances) | High | Limits instance choice; may be expensive instances |
+| D5 | Are there AWS-specific technical requirements from the vendor? (e.g., HANA needs specific EBS types, Oracle needs dedicated hosts) | Very High | Vendor requirements override cost optimization |
+| D6 | Does the vendor charge differently for cloud deployment? (cloud tax, different licensing for AWS) | Very High | Oracle, IBM, SAP all have cloud-specific licensing rules |
+| D7 | Is the vendor's support contract valid on AWS? Or do you need a new contract? | High | Support gaps during migration |
+| D8 | Does the vendor provide migration tooling for AWS? (e.g., SAP DMO, Oracle RMAN to RDS) | Medium | Reduces migration effort |
+| **Deployment & Architecture** | | | |
+| D9 | What is the current architecture? (monolithic, 3-tier, microservices, distributed) | High | Affects AWS target design |
+| D10 | What OS does the vendor require? (Windows only, RHEL only, SLES only, any Linux) | Medium | License cost per OS; Graviton may not be supported |
+| D11 | What database does the vendor require? (Oracle only, SQL Server, HANA, vendor-specific) | Very High | DB license is often largest cost |
+| D12 | Can the vendor's required DB be replaced with AWS-managed? (Oracle → RDS Oracle, SQL Server → RDS SQL) | High | RDS License-Included vs BYOL |
+| D13 | What middleware is required? (WebSphere, WebLogic, JBoss, IIS, vendor-specific) | Medium | Each has licensing implications |
+| D14 | Does the product support containerization? (can it run in Docker/ECS/EKS) | High | Containers = better density, lower cost |
+| D15 | Does the product support auto-scaling or is it fixed capacity? | Medium | Fixed = overprovisioned; auto-scale = cost-efficient |
+| D16 | What HA/clustering does the vendor support on AWS? (active-active, active-passive, vendor-specific clustering) | High | Determines Multi-AZ architecture |
+| **Migration Feasibility** | | | |
+| D17 | Has anyone migrated this product to AWS before? (vendor case studies, AWS partner references) | Medium | Proven path reduces risk/effort |
+| D18 | Are there known blockers to running on AWS? (hardware dongles, proprietary storage, specific network requirements) | Very High | Blockers may make migration impossible |
+| D19 | Are there hardcoded dependencies on physical infrastructure? (MAC address licensing, USB dongles, specific NIC drivers) | High | May block migration entirely |
+| D20 | What is the upgrade path? Should you upgrade BEFORE or AFTER migration? | High | Migrate then upgrade or combine into one event |
+| D21 | Is the vendor sunsetting this product? Is there a SaaS replacement? | Very High | If sunsetting → Replace strategy instead of Rehost |
+| D22 | Does the vendor offer a managed service on AWS? (vendor manages on your AWS account) | High | Like COTS-as-a-Service — vendor ops, your infra |
+
+### COTS on AWS — Common Scenarios
+
+| Product | AWS Support? | Key Consideration | Typical Strategy |
+|---------|-------------|-------------------|-----------------|
+| **SAP ECC / S/4HANA (on-prem)** | ✅ Fully certified | Must use SAP-certified instance types; HANA memory sizing | Rehost to EC2 (certified instances) |
+| **Oracle E-Business Suite** | ✅ Supported | Oracle per-core licensing on AWS is expensive; consider Dedicated Hosts | Rehost (Dedicated Hosts for BYOL) |
+| **Oracle Database** | ✅ RDS or EC2 | BYOL needs Dedicated Hosts; License-Included = RDS only | Replatform (RDS) or Rehost (EC2 BYOL) |
+| **Microsoft SQL Server** | ✅ RDS or EC2 | SA required for BYOL; License-Included via RDS is simpler | Replatform (RDS License-Included) |
+| **IBM MQ** | ✅ On EC2 / Amazon MQ | Amazon MQ supports IBM MQ protocol | Replatform (Amazon MQ) |
+| **TIBCO / MuleSoft** | ✅ On EC2 or ECS | License mobility needed | Rehost or Replace (with EventBridge/Step Functions) |
+| **SAS** | ✅ AWS Marketplace | Cloud-specific licensing | Replatform (AWS Marketplace edition) |
+| **Informatica** | ✅ IDMC on AWS | Cloud edition available | Replace (IDMC cloud-native) |
+| **Custom ERP / legacy** | ⚠️ Varies | No vendor = no certification needed; but also no support | Rehost or Replace |
+
+### Vendor Feasibility Assessment Checklist
+
+Before estimating cost for any COTS product on AWS:
+
+- [ ] Vendor officially supports AWS deployment (get it in writing)
+- [ ] Certified instance types identified (limits cost optimization)
+- [ ] Licensing model on AWS confirmed (BYOL rules, cloud licensing changes)
+- [ ] Vendor support contract valid on AWS (no support gap)
+- [ ] No hardware-specific blockers (dongles, proprietary storage)
+- [ ] Database requirement confirmed (can it use RDS or must be self-managed?)
+- [ ] HA/DR approach validated with vendor (Multi-AZ supported?)
+- [ ] Migration tooling available (vendor tools, partner tools, or manual)
+- [ ] Reference architectures / case studies exist
+
+---
+
+## E — AWS Target Architecture Preferences
 
 > *How does the customer want to run this on AWS? This shapes the entire cost model.*
 
@@ -68,7 +222,7 @@
 
 ---
 
-## C — Compute, Storage & Database Sizing
+## F — Compute, Storage & Database Sizing
 
 > *These numbers directly feed into AWS Pricing Calculator.*
 
@@ -92,7 +246,7 @@
 
 ---
 
-## D — Networking & Data Transfer
+## G — Networking & Data Transfer
 
 > *Data transfer is the hidden AWS cost that catches everyone off guard.*
 
@@ -111,7 +265,7 @@
 
 ---
 
-## E — Licensing & Commercial
+## H — Licensing & Commercial
 
 > *Licensing can make or break an AWS cost model. Oracle/SAP/Microsoft rules are complex.*
 
@@ -130,7 +284,7 @@
 
 ---
 
-## F — Operations & Manpower
+## I — Operations & Manpower
 
 > *People cost is often higher than infrastructure cost. Capture both ongoing and migration effort.*
 
@@ -151,7 +305,7 @@
 
 ---
 
-## G — CI/CD & Automation
+## J — CI/CD & Automation
 
 > *Automation reduces ongoing effort cost but has upfront build cost. Assess what exists and what's needed.*
 
@@ -175,7 +329,7 @@
 
 ---
 
-## H — Migration Effort & Timeline
+## K — Migration Effort & Timeline
 
 > *One-time costs to get from current state to AWS target state.*
 
@@ -261,18 +415,21 @@ After the workshop, produce this per application:
 
 | Trap | Impact | Question to Ask |
 |------|--------|-----------------|
-| **Data transfer egress** | Can be 20-30% of bill | D1: How much data leaves AWS monthly? |
-| **NAT Gateway charges** | $0.045/GB processed | D8: How much traffic goes through NAT? |
-| **Multi-AZ database** | 2x DB cost | B4: Is Multi-AZ required? |
-| **Oracle licensing on AWS** | Can 10x DB cost | E2: What Oracle licensing model? |
-| **Always-on non-prod** | 40-60% waste | B8: Can non-prod be scheduled? |
-| **Overprovisioned instances** | 30-50% waste | C1: What is actual utilization vs allocated? |
-| **No Savings Plans** | Paying 40-60% more | B10: What commitment level? |
-| **Forgotten DR environment** | 50-100% cost increase | B5: Do you need multi-region DR? |
-| **Log/metric retention** | Grows silently | B14: What retention for logs and metrics? |
-| **Parallel run period** | Temporary 2x cost | H5-H6: How long will both environments run? |
-| **SI partner cost** | $1.5-3K/day/person | H3: Is external help needed? |
-| **Training & certification** | $5-10K per person | H10: What AWS training needed? |
+| **Data transfer egress** | Can be 20-30% of bill | G1: How much data leaves AWS monthly? |
+| **NAT Gateway charges** | $0.045/GB processed | G8: How much traffic goes through NAT? |
+| **Multi-AZ database** | 2x DB cost | E4: Is Multi-AZ required? |
+| **Oracle licensing on AWS** | Can 10x DB cost | H2: What Oracle licensing model? |
+| **Always-on non-prod** | 40-60% waste | E8: Can non-prod be scheduled? |
+| **Overprovisioned instances** | 30-50% waste | F1: What is actual utilization vs allocated? |
+| **No Savings Plans** | Paying 40-60% more | E10: What commitment level? |
+| **Forgotten DR environment** | 50-100% cost increase | E5: Do you need multi-region DR? |
+| **Log/metric retention** | Grows silently | E14: What retention for logs and metrics? |
+| **Parallel run period** | Temporary 2x cost | K5-K6: How long will both environments run? |
+| **SI partner cost** | $1.5-3K/day/person | K3: Is external help needed? |
+| **Training & certification** | $5-10K per person | K10: What AWS training needed? |
+| **Vendor doesn't support AWS** | Entire migration blocked | D1: Does vendor certify AWS deployment? |
+| **SaaS vendor cloud lock-in** | Cannot move to AWS | C9: Can you contractually request AWS hosting? |
+| **COTS licensing change for cloud** | 2-5x cost increase | D6: Does vendor charge differently for cloud? |
 
 ---
 
