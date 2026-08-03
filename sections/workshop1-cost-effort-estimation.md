@@ -25,6 +25,7 @@
 | I | Operations & Manpower | 20 min | Team effort, ongoing run cost |
 | J | CI/CD & Automation | 20 min | Existing automation, target state |
 | K | Migration Effort & Timeline | 15 min | One-time migration cost & duration |
+| L | Compliance, Regulatory, Identity & Hidden Dependencies | 30 min | PII, data residency, AD, shared drives, cache, transaction logs, licenses |
 
 ---
 
@@ -411,6 +412,126 @@ After the workshop, produce this per application:
 
 ---
 
+---
+
+## L — Compliance, Regulatory, Identity & Hidden Dependencies
+
+> *These are the items that silently inflate cost, block migration, or force expensive architecture decisions. Miss any of these and your estimate will be WRONG.*
+
+### L1 — Compliance & Regulatory Requirements
+
+| # | Question | Cost Impact | Why It Matters |
+|---|----------|-------------|----------------|
+| L1.1 | What regulatory frameworks apply? (GDPR, HIPAA, PCI-DSS, SOX, FISMA, FedRAMP, DORA, MAS, APRA) | Very High | Each framework may require specific controls = additional services cost |
+| L1.2 | Is there PII (Personally Identifiable Information) stored? What types? (names, SSN, DOB, addresses, health records, biometrics) | Very High | PII requires encryption, DLP, audit logging, access control — all add cost |
+| L1.3 | Is there PHI (Protected Health Information)? HIPAA BAA required? | Very High | HIPAA on AWS requires BAA-eligible services only (limits choices) |
+| L1.4 | Is there PCI cardholder data? What PCI-DSS level? | Very High | PCI scoping requires isolated VPC, WAF, logging, quarterly scans = cost |
+| L1.5 | Is there financial / SOX-regulated data? Audit trail requirements? | High | Immutable logs, separation of duties, CloudTrail = cost |
+| L1.6 | **Must this application operate in a SINGLE specific AWS region?** (data sovereignty / regulatory mandate) | Very High | Single-region eliminates multi-region DR; limits HA choices |
+| L1.7 | What country/jurisdiction must data reside in? (e.g., India-only, EU-only, Australia-only, UAE-only) | Very High | Limits region selection; some regions are more expensive |
+| L1.8 | Is cross-border data transfer allowed? Under what mechanism? (SCCs, BCRs, adequacy decision) | High | Cross-region replication for DR may be prohibited = single-region DR only |
+| L1.9 | Are there data classification labels applied? (Restricted, Confidential, Internal, Public) | Medium | Classification drives encryption, access control, and monitoring requirements |
+| L1.10 | Is data masking / tokenization required in non-prod environments? | High | Amazon Macie, DMS masking, or third-party tools = additional cost |
+| L1.11 | What audit / evidence requirements exist? (who accessed what, when, retention) | High | CloudTrail, Config Rules, Access Analyzer, Security Hub = cost |
+| L1.12 | Is there a mandatory security baseline / hardening standard? (CIS Benchmarks, NIST 800-53, IRAP) | Medium | Compliance automation (Security Hub, Config conformance packs) = cost |
+| L1.13 | Are there industry-specific regulations? (banking: operational resilience; healthcare: consent management; government: IL4/IL5) | High | May force GovCloud, dedicated tenancy, or specific services |
+| L1.14 | Is a third-party audit / certification required on AWS? (SOC2 Type II, ISO 27001 for YOUR environment) | High | Audit prep effort + tooling for evidence collection |
+| L1.15 | What is the data retention period required by regulation? (7 years financial, 6 years GDPR proof, etc.) | High | Long retention = significant storage cost (S3 Glacier, log archives) |
+| L1.16 | Is there a legal hold / e-discovery requirement? | Medium | S3 Object Lock, Vault Lock = cost |
+| L1.17 | What encryption key management is required? (AWS-managed, CMK, CloudHSM, external KMS) | High | CloudHSM = $1.50/hr per device; CMK = $1/month per key |
+| L1.18 | Is there a DLP (Data Loss Prevention) requirement? | Medium | Amazon Macie = cost per GB scanned |
+
+### L2 — Identity, SSO & Active Directory
+
+| # | Question | Cost Impact | Why It Matters |
+|---|----------|-------------|----------------|
+| L2.1 | What is the current Identity Provider? (On-prem Active Directory, Azure AD/Entra ID, Okta, Ping, OneLogin) | High | Determines AWS identity architecture |
+| L2.2 | **Is there an on-premises Active Directory that applications depend on?** | Very High | Requires AD Connector or AWS Managed Microsoft AD or self-managed DC on EC2 |
+| L2.3 | Do applications require domain-joined servers? (Windows AD domain membership) | Very High | AWS Managed Microsoft AD = ~$144/month (Standard) or ~$580/month (Enterprise) |
+| L2.4 | Is Kerberos authentication required? (Windows integrated auth, SQL Server Windows auth) | High | Requires AWS Managed AD or self-managed AD on EC2 |
+| L2.5 | Is LDAP bind used for application authentication? (direct LDAP queries to AD) | High | AD Connector or Managed AD needed; network latency consideration |
+| L2.6 | What SSO protocol? (SAML 2.0, OIDC, WS-Federation, proprietary) | Medium | AWS IAM Identity Center is free; but integration effort varies |
+| L2.7 | How many users need SSO access to AWS console + applications? | Medium | IAM Identity Center is free but IdP setup = effort cost |
+| L2.8 | Is there multi-forest or multi-domain AD trust? | High | Complex AD topology = more expensive AWS AD setup + trust config |
+| L2.9 | Are there Group Policy Objects (GPOs) that applications depend on? | Medium | Must replicate GPO logic in AWS (Systems Manager, custom scripts) |
+| L2.10 | Is AD used for DNS resolution internally? (AD-integrated DNS zones) | Medium | Route 53 Resolver + Outbound/Inbound endpoints = cost (~$0.125/hr/endpoint/direction) |
+| L2.11 | What is the network latency requirement from AWS to on-prem AD? | High | AD auth is latency-sensitive; may force Direct Connect over VPN |
+| L2.12 | Is there a plan to migrate to cloud-native identity? (Azure AD/Entra, AWS IAM Identity Center) | Medium | Migration effort vs maintaining hybrid AD long-term |
+| L2.13 | Are there service accounts in AD used by applications? How many? | Medium | Must be replicated or converted to AWS Secrets Manager |
+| L2.14 | Is there Radius/NPS for VPN or Wi-Fi authentication that apps depend on? | Low-Medium | May need Network Access Analyzer or third-party on EC2 |
+
+### L3 — On-Premises Shared Drives / File Services
+
+| # | Question | Cost Impact | Why It Matters |
+|---|----------|-------------|----------------|
+| L3.1 | **Are there on-prem shared drives / file shares that applications depend on?** (SMB/CIFS, NFS, DFS) | Very High | FSx for Windows or EFS = significant ongoing cost |
+| L3.2 | What protocol is used? (SMB/CIFS for Windows, NFS for Linux, DFS Namespaces) | High | SMB → FSx for Windows ($$$); NFS → EFS ($$); DFS → complex |
+| L3.3 | What is the total size of shared drives used by this application? | High | Direct storage cost input |
+| L3.4 | How many applications / users share the same file system? | High | Shared dependency = must migrate together or build bridge |
+| L3.5 | What access patterns? (random read/write, sequential, mostly read, archival) | Medium | FSx SSD vs HDD; EFS modes; determines tier and cost |
+| L3.6 | What throughput / IOPS requirements for file shares? | High | FSx SSD vs HDD; EFS bursting vs provisioned = 3-5x cost difference |
+| L3.7 | Are there AD-based file permissions (ACLs) on shared drives? | High | FSx for Windows preserves ACLs; EFS/S3 do not |
+| L3.8 | Do users access file shares via mapped drives (Z:\, H:\, network paths)? | Medium | FSx for Windows + AD required to maintain user experience |
+| L3.9 | Is DFS Replication or DFS Namespaces used across sites? | Medium | Multi-AZ FSx or DataSync replication = cost |
+| L3.10 | Can any file data be moved to S3 instead of block file shares? | High | S3 is 10-50x cheaper than FSx/EFS for archival data |
+| L3.11 | Are there print servers that depend on file shares? | Low | May need FSx or EC2-based print server |
+| L3.12 | What is the data growth rate for file shares? (GB/month) | Medium | Storage cost projection |
+
+### L4 — Database Transaction Logs, Replication & Dependencies
+
+| # | Question | Cost Impact | Why It Matters |
+|---|----------|-------------|----------------|
+| L4.1 | **Are database transaction logs (redo logs, WAL, binlog) used by OTHER systems?** (log shipping, CDC, replication subscribers) | Very High | Downstream consumers must be migrated or replicated |
+| L4.2 | Is there SQL Server log shipping or Always-On Availability Groups? | High | Multi-AZ RDS handles HA; but cross-region/log subscribers = extra cost |
+| L4.3 | Is Oracle Data Guard / Active Data Guard in use? Sync or async? | Very High | Active Data Guard license on AWS = expensive; or replace with DMS |
+| L4.4 | Is Oracle GoldenGate or Streams in use? | Very High | GoldenGate licensing on AWS is costly; consider DMS CDC alternative |
+| L4.5 | Is MySQL/PostgreSQL streaming replication in use? How many replicas? | Medium | RDS Read Replicas = per-replica cost |
+| L4.6 | Is SAP HANA System Replication (HSR) configured? Sync or async? | Very High | Multi-AZ HANA = second full-size memory-optimized instance = huge cost |
+| L4.7 | Are transaction logs shipped to a data warehouse or analytics platform? (CDC to Redshift, Snowflake, data lake) | High | DMS CDC or native CDC on AWS = ongoing compute cost |
+| L4.8 | What is the transaction log volume per day? (GB) | Medium | Storage cost for log retention + I/O throughput |
+| L4.9 | Are there point-in-time recovery requirements? How far back? | Medium | RDS automated backups (up to 35 days free); beyond = manual + S3 cost |
+| L4.10 | Is there a reporting / read-only replica? How is it used? | High | Read replica = additional instance cost (can be smaller) |
+| L4.11 | Are there ETL jobs that read transaction logs? (Informatica CDC, Attunity, Debezium) | High | Must replicate on AWS; tool licensing + compute cost |
+| L4.12 | Is database mirroring used for any failover? | Medium | RDS Multi-AZ replaces this but at Multi-AZ pricing |
+
+### L5 — Cache, In-Memory & Session Dependencies
+
+| # | Question | Cost Impact | Why It Matters |
+|---|----------|-------------|----------------|
+| L5.1 | **Is there a caching layer that this application depends on?** (Redis, Memcached, Hazelcast, Apache Ignite, Ehcache, Varnish, Windows AppFabric) | High | ElastiCache / MemoryDB = significant cost based on node size |
+| L5.2 | What cache technology is used? (Redis, Memcached, Hazelcast, vendor-specific) | High | ElastiCache Redis vs Memcached vs MemoryDB — different pricing |
+| L5.3 | What is the total cache memory size requirement? | High | Directly determines node type and count = cost |
+| L5.4 | Is the cache clustered / distributed? How many nodes? | High | Multi-node cluster = cost × node count |
+| L5.5 | Is cache data persistence required? (survives restart / failover) | Medium | MemoryDB = durable (more $); ElastiCache = ephemeral (less $) |
+| L5.6 | **Is Redis or Memcached licensed separately?** (Redis Enterprise, Hazelcast Enterprise, GigaSpaces) | Very High | Enterprise license + infra cost; or switch to AWS-managed (free tier vs enterprise features) |
+| L5.7 | What is the cache hit ratio? Is the cache actually effective? | Medium | Low hit rate → may not need expensive large cache |
+| L5.8 | Is HTTP session state stored in cache? (sticky sessions, session replication) | Medium | Affects HA design; ElastiCache for session store = cost |
+| L5.9 | Is the cache shared across multiple applications? | High | Shared = migration dependency; cost attribution complexity |
+| L5.10 | Can the application function WITHOUT the cache? (degraded mode) Or is cache a HARD dependency? | High | Hard dependency = cache must be Multi-AZ (replication) = 2x cost |
+| L5.11 | What is the latency requirement for cache access? (<1ms needed?) | Medium | Same-AZ placement or DAX; sub-ms may force specific instance types |
+| L5.12 | **Are there in-memory database dependencies?** (SAP HANA, VoltDB, SingleStore/MemSQL, Redis as primary DB) | Very High | In-memory DBs require memory-optimized instances (r6g/x2idn) = very expensive |
+| L5.13 | What is the eviction policy? (LRU, LFU, TTL) Does the app handle eviction gracefully? | Low | Architecture consideration for right-sizing |
+| L5.14 | Is Redis used for pub/sub, queues, or streams (beyond caching)? | Medium | May need larger cluster or separate Redis for non-cache workloads |
+
+### L6 — Licensing for Supporting Infrastructure & Services
+
+| # | Question | Cost Impact | Why It Matters |
+|---|----------|-------------|----------------|
+| L6.1 | Is there a separate caching license? (Redis Enterprise, Hazelcast Enterprise, GigaSpaces XAP) | High | BYOL or switch to AWS-managed open-source |
+| L6.2 | Is there a separate middleware license? (IBM WebSphere, Oracle WebLogic, TIBCO, MuleSoft) | High | Per-core licensing may change on AWS |
+| L6.3 | Is there a monitoring/APM tool license? (Dynatrace, AppDynamics, New Relic, Splunk) | High | Per-host pricing changes with cloud scale; consider CloudWatch/X-Ray |
+| L6.4 | Is there a backup tool license? (Commvault, Veeam, Veritas NetBackup, Cohesity) | Medium | AWS Backup may replace = cost saving |
+| L6.5 | Is there an antivirus / EDR license? (CrowdStrike, Trend Micro, Symantec, Carbon Black) | Medium | Per-instance; marketplace options may be cheaper |
+| L6.6 | Is there a private CA / certificate management license? (Venafi, DigiCert, internal PKI) | Medium | AWS Private CA = $400/month/CA; ACM public certs = free |
+| L6.7 | Is there a secrets management tool license? (CyberArk, HashiCorp Vault Enterprise, Thycotic) | Medium | AWS Secrets Manager = $0.40/secret/month; may replace expensive tools |
+| L6.8 | Is there a WAF / DDoS license? (F5, Imperva, Akamai) | High | AWS WAF + Shield vs third-party; significant cost difference |
+| L6.9 | Is there a load balancer license? (F5 BIG-IP, Citrix ADC/NetScaler, HAProxy Enterprise) | High | AWS ALB/NLB replaces; but F5 features may require AWS Marketplace F5 |
+| L6.10 | **Are there per-core / per-CPU licenses that MULTIPLY on AWS?** | Very High | Oracle, IBM DB2, SAP — uncontrolled licensing can 5-10x cost |
+| L6.11 | Are there data integration / ETL tool licenses? (Informatica PowerCenter, Talend, DataStage) | High | AWS Glue may replace; or BYOL on EC2 |
+| L6.12 | Is there a job scheduler license? (Control-M, AutoSys, Tivoli) | Medium | AWS Step Functions / EventBridge Scheduler may replace |
+
+---
+
 ## ⚠️ Common Cost Traps — Don't Miss These
 
 | Trap | Impact | Question to Ask |
@@ -430,6 +551,15 @@ After the workshop, produce this per application:
 | **Vendor doesn't support AWS** | Entire migration blocked | D1: Does vendor certify AWS deployment? |
 | **SaaS vendor cloud lock-in** | Cannot move to AWS | C9: Can you contractually request AWS hosting? |
 | **COTS licensing change for cloud** | 2-5x cost increase | D6: Does vendor charge differently for cloud? |
+| **On-prem Active Directory dependency** | $144-$580/month + DX latency | L2.2: Does app need domain-joined servers? |
+| **Shared file drives (SMB/NFS)** | FSx = $0.13-$0.25/GB/month | L3.1: Are there shared drives apps depend on? |
+| **Database transaction log consumers** | Extra replicas + compute | L4.1: Are logs used by other systems? |
+| **Redis/Cache Enterprise licensing** | $50K-$200K/year on top of infra | L5.6: Is cache separately licensed? |
+| **Data sovereignty — single region** | No multi-region DR possible | L1.6: Must app operate in one region only? |
+| **PII/PHI compliance controls** | Encryption + audit + DLP = 20-40% more | L1.2-L1.3: Is there regulated data? |
+| **In-memory DB (HANA, VoltDB)** | Memory-optimized instances = 2-3x cost | L5.12: In-memory database dependency? |
+| **Per-core licensing explosion** | Oracle/SAP on large instances = 5-10x | L6.10: Per-core licenses that multiply? |
+| **Private CA requirement** | $400/month per CA | L6.6: Is there a PKI/CA requirement? |
 
 ---
 
@@ -447,6 +577,15 @@ Before closing the workshop, confirm you have:
 - [ ] Commitment preference (On-Demand vs 1yr vs 3yr Savings Plan)
 - [ ] Non-prod scheduling decision (always-on vs scheduled)
 - [ ] HA/DR architecture decision (Multi-AZ, Multi-Region, pilot light, warm standby, hot)
+- [ ] Compliance & regulatory requirements documented (GDPR, HIPAA, PCI, SOX, data residency)
+- [ ] PII/PHI/PCI data identified — encryption and DLP cost factored
+- [ ] Data residency / single-region mandate confirmed
+- [ ] Active Directory dependency assessed (Managed AD, AD Connector, or cloud-native)
+- [ ] SSO / identity architecture decided (IAM Identity Center, federation, Managed AD)
+- [ ] On-prem shared drive dependencies mapped (FSx vs EFS vs S3)
+- [ ] Database transaction log / replication consumers identified
+- [ ] Cache / in-memory dependencies documented (ElastiCache sizing, licensing)
+- [ ] Supporting service licenses inventoried (middleware, APM, backup, WAF, scheduler)
 - [ ] CI/CD current state and target state documented
 - [ ] IaC requirement (yes/no, tool choice)
 - [ ] Team composition for migration (internal + external)
